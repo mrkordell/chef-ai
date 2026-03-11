@@ -80,10 +80,11 @@ chatRoutes.get("/conversations/:id/messages", async (c) => {
     .where(eq(messages.conversationId, conversationId))
     .orderBy(messages.createdAt);
 
-  // Parse recipeData JSON for each message
+  // Parse recipeData and toolCalls JSON for each message
   const parsed = rows.map((msg) => ({
     ...msg,
     recipeData: safeJsonParse(msg.recipeData, null),
+    toolCalls: safeJsonParse(msg.toolCalls, null),
   }));
 
   return c.json<ApiResponse<typeof parsed>>({ success: true, data: parsed });
@@ -300,12 +301,18 @@ chatRoutes.post("/", async (c) => {
 
         // ── Persist assistant message ─────────────────────────────
 
-        // Extract recipe data from tool calls for backward-compatible DB storage
+        // Save the FULL tool call results (all types, not just recipes)
+        const toolCallsJson = toolCallResults.length > 0
+          ? JSON.stringify(toolCallResults)
+          : null;
+
+        // Also save recipe data for backward compat (single Recipe object)
         const recipeToolCalls = toolCallResults.filter(
           (tc) => tc.name === "save_recipe",
         );
-        const recipeData = recipeToolCalls.map((tc) => tc.data);
-        const recipeDataJson = recipeData.length > 0 ? JSON.stringify(recipeData) : null;
+        const recipeDataJson = recipeToolCalls.length > 0
+          ? JSON.stringify(recipeToolCalls[0]!.data)
+          : null;
 
         const [savedAssistantMsg] = await db
           .insert(messages)
@@ -314,6 +321,7 @@ chatRoutes.post("/", async (c) => {
             role: "assistant",
             content: fullContent,
             recipeData: recipeDataJson,
+            toolCalls: toolCallsJson,
           })
           .returning();
 

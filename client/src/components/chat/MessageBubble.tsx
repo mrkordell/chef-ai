@@ -33,7 +33,11 @@ function getRecipesFromMessage(message: ChatMessage): Recipe[] {
   }
 
   // Legacy path: recipeData from old code-fence parsing
+  // Handle both single Recipe and Recipe[] (old bug stored arrays)
   if (message.recipeData) {
+    if (Array.isArray(message.recipeData)) {
+      return message.recipeData as Recipe[];
+    }
     return [message.recipeData];
   }
 

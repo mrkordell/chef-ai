@@ -8,6 +8,13 @@
       "when": 1773191318396,
       "tag": "0000_lean_lightspeed",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1773202365553,
+      "tag": "0001_fair_rawhide_kid",
+      "breakpoints": true
     }
   ]
 }

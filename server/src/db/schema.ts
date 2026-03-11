@@ -53,6 +53,8 @@ export const messages = sqliteTable("messages", {
   content: text("content").notNull(),
   /** Nullable JSON string — structured recipe data when the AI generates a recipe */
   recipeData: text("recipe_data"),
+  /** Nullable JSON string — full array of tool call results (save_recipe, save_meal_plan, etc.) */
+  toolCalls: text("tool_calls"),
   createdAt: integer("created_at").notNull().$defaultFn(unixNow),
 });
 
