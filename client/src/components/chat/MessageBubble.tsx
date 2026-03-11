@@ -19,7 +19,7 @@ function getRecipesFromMessage(message: ChatMessage): Recipe[] {
   if (message.toolCalls && message.toolCalls.length > 0) {
     const recipes: Recipe[] = [];
     for (const tc of message.toolCalls) {
-      if (tc.name === "save_recipe") {
+      if (tc.name === "save_recipe" && tc.data && typeof tc.data === "object") {
         recipes.push(tc.data as Recipe);
       }
       if (tc.name === "save_meal_plan") {

@@ -50,6 +50,10 @@ export default function RecipeCard({
     onChatAbout?.(recipe);
   }, [recipe, onChatAbout]);
 
+  const ingredients = recipe.ingredients ?? [];
+  const instructions = recipe.instructions ?? [];
+  const nutrition = recipe.nutrition ?? { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+
   if (compact) {
     return (
       <div className="rounded-lg border border-surface-200 bg-white p-3">
@@ -89,7 +93,7 @@ export default function RecipeCard({
 
       <CardContent className="space-y-3">
         {/* Nutrition */}
-        <NutritionLabel nutrition={recipe.nutrition} />
+        <NutritionLabel nutrition={nutrition} />
 
         {/* Ingredients (expandable) */}
         <div>
@@ -99,7 +103,7 @@ export default function RecipeCard({
             aria-expanded={showIngredients}
           >
             <span>
-              Ingredients ({recipe.ingredients.length})
+              Ingredients ({ingredients.length})
             </span>
             {showIngredients ? (
               <ChevronUp className="h-4 w-4" />
@@ -110,7 +114,7 @@ export default function RecipeCard({
 
           {showIngredients && (
             <ul className="mt-1 space-y-1 px-3 animate-[fade-in_0.2s_ease-out]">
-              {recipe.ingredients.map((ingredient, i) => (
+              {ingredients.map((ingredient, i) => (
                 <li
                   key={`${ingredient.name}-${i}`}
                   className="flex items-baseline gap-2 text-sm"
@@ -136,7 +140,7 @@ export default function RecipeCard({
             aria-expanded={showInstructions}
           >
             <span>
-              Instructions ({recipe.instructions.length} steps)
+              Instructions ({instructions.length} steps)
             </span>
             {showInstructions ? (
               <ChevronUp className="h-4 w-4" />
@@ -147,7 +151,7 @@ export default function RecipeCard({
 
           {showInstructions && (
             <ol className="mt-1 space-y-2 px-3 animate-[fade-in_0.2s_ease-out]">
-              {recipe.instructions.map((step, i) => (
+              {instructions.map((step, i) => (
                 <li key={i} className="flex gap-3 text-sm">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary-700 text-xs font-bold">
                     {i + 1}
