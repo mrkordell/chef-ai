@@ -101,7 +101,11 @@ export default function MessageBubble({
 
         {/* Recipe cards */}
         {recipes.map((recipe, i) => (
-          <div key={`recipe-${recipe.title}-${i}`} className="w-full max-w-md">
+          <div
+            key={`recipe-${recipe.title}-${i}`}
+            className="w-full max-w-md animate-[fade-in_0.3s_ease-out]"
+            style={recipes.length > 1 ? { animationDelay: `${i * 100}ms`, animationFillMode: "backwards" } : undefined}
+          >
             <RecipeCard recipe={recipe} onChatAbout={onChatAboutRecipe} />
           </div>
         ))}

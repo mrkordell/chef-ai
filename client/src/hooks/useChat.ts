@@ -12,6 +12,7 @@ type UseChatReturn = {
   isStreaming: boolean;
   currentStreamContent: string;
   currentToolCalls: ToolCallEvent[];
+  pendingToolCalls: Array<{ name: string; index: number }>;
   conversations: Conversation[];
   activeConversationId: number | null;
   sendMessage: (text: string) => Promise<void>;
@@ -26,6 +27,7 @@ export function useChat(): UseChatReturn {
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentStreamContent, setCurrentStreamContent] = useState("");
   const [currentToolCalls, setCurrentToolCalls] = useState<ToolCallEvent[]>([]);
+  const [pendingToolCalls, setPendingToolCalls] = useState<Array<{ name: string; index: number }>>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<
     number | null
@@ -93,6 +95,7 @@ export function useChat(): UseChatReturn {
       setIsStreaming(true);
       setCurrentStreamContent("");
       setCurrentToolCalls([]);
+      setPendingToolCalls([]);
       toolCallsRef.current = [];
 
       let accumulated = "";
@@ -104,6 +107,10 @@ export function useChat(): UseChatReturn {
           onContent(content: string) {
             accumulated += content;
             setCurrentStreamContent(accumulated);
+          },
+
+          onToolCallStart(info) {
+            setPendingToolCalls(prev => [...prev, info]);
           },
 
           onToolCall(toolCall) {
@@ -137,6 +144,7 @@ export function useChat(): UseChatReturn {
             setMessages((prev) => [...prev, assistantMessage]);
             setCurrentStreamContent("");
             setCurrentToolCalls([]);
+            setPendingToolCalls([]);
             toolCallsRef.current = [];
             setIsStreaming(false);
 
@@ -158,6 +166,7 @@ export function useChat(): UseChatReturn {
             setMessages((prev) => [...prev, errorMessage]);
             setCurrentStreamContent("");
             setCurrentToolCalls([]);
+            setPendingToolCalls([]);
             toolCallsRef.current = [];
             setIsStreaming(false);
           },
@@ -172,6 +181,7 @@ export function useChat(): UseChatReturn {
     isStreaming,
     currentStreamContent,
     currentToolCalls,
+    pendingToolCalls,
     conversations,
     activeConversationId,
     sendMessage,

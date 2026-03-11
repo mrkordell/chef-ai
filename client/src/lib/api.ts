@@ -90,6 +90,7 @@ export async function fetchMe(): Promise<ApiResponse<User>> {
 export type SSECallbacks = {
   onContent: (content: string) => void;
   onToolCall: (toolCall: { name: string; call_id: string; data: unknown }) => void;
+  onToolCallStart?: (info: { name: string; index: number }) => void;
   onDone: (data: { conversationId: number; messageId: number }) => void;
   onError: (error: string) => void;
 };
@@ -161,6 +162,8 @@ export async function sendMessage(
               conversationId: parsed.conversationId,
               messageId: parsed.messageId,
             });
+          } else if (parsed.tool_call_start) {
+            callbacks.onToolCallStart?.(parsed.tool_call_start);
           } else if (parsed.tool_call) {
             callbacks.onToolCall(parsed.tool_call);
           } else if (parsed.content !== undefined) {

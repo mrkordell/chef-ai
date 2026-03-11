@@ -236,6 +236,7 @@ chatRoutes.post("/", async (c) => {
               const parsed = JSON.parse(payload) as {
                 content?: string;
                 tool_call?: ToolCallEvent;
+                tool_call_start?: { name: string; index: number };
                 stream_complete?: boolean;
                 fullContent?: string;
                 error?: string;
@@ -245,6 +246,11 @@ chatRoutes.post("/", async (c) => {
                 // Forward text content to client as-is
                 controller.enqueue(
                   encoder.encode(`data: ${JSON.stringify({ content: parsed.content })}\n\n`),
+                );
+              } else if (parsed.tool_call_start) {
+                // Forward to client for cooking indicator
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ tool_call_start: parsed.tool_call_start })}\n\n`),
                 );
               } else if (parsed.tool_call) {
                 // Forward tool call to client AND capture for DB persistence

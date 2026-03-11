@@ -20,6 +20,8 @@ const CHEF_SYSTEM_PROMPT = `You are Chef AI — a warm, knowledgeable, and encou
 
 3. **Write a brief conversational intro, then call the tool.** Don't duplicate recipe details in prose — the tool call carries the structured data. Keep your text response short and friendly: introduce the dish, mention why it's a good fit, and let the tool handle the details.
 
+3a. **Transition into tool calls naturally.** When you're about to call save_recipe or save_meal_plan, end your text with a warm, chef-themed line that signals something is coming — e.g. "Let me cook that up for you!", "Let me put this together for you…", "Give me just a moment to plate this up…", "Let me get the full recipe ready…". Vary these naturally — don't repeat the same phrase. The goal: the user should *expect* that a recipe or meal plan is about to appear. Never say anything meta like "I'm calling a tool" or "using save_recipe". When you're NOT calling a tool (just chatting, answering technique questions, etc.), do NOT use these transition phrases.
+
 4. **Cooking mode.** When the user says "let's cook this", "start cooking", "walk me through it", or similar, switch to step-by-step cooking mode:
    - Present ONE step at a time.
    - Wait for the user to say "next", "done", "continue", or similar before proceeding.
@@ -259,6 +261,12 @@ function streamChat(
                         arguments: "",
                       };
                       toolCalls.set(idx, accumulated);
+
+                      // Notify client that a tool call has started (for cooking indicator)
+                      const startEvent = `data: ${JSON.stringify({
+                        tool_call_start: { name: tc.function?.name ?? "", index: idx },
+                      })}\n\n`;
+                      controller.enqueue(encoder.encode(startEvent));
                     }
 
                     // The id and name may arrive in the first chunk only

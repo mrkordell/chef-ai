@@ -5,6 +5,7 @@ import { cn } from "../../lib/utils.ts";
 import { Avatar, AvatarFallback } from "../ui/avatar.tsx";
 import { ScrollArea } from "../ui/scroll-area.tsx";
 import ChatInput from "./ChatInput.tsx";
+import CookingIndicator from "./CookingIndicator.tsx";
 import MessageBubble from "./MessageBubble.tsx";
 
 type ChatWindowProps = {
@@ -12,6 +13,7 @@ type ChatWindowProps = {
   isStreaming: boolean;
   currentStreamContent: string;
   currentToolCalls: ToolCallEvent[];
+  pendingToolCalls: Array<{ name: string; index: number }>;
   onSend: (message: string) => void;
 };
 
@@ -27,6 +29,7 @@ export default function ChatWindow({
   isStreaming,
   currentStreamContent,
   currentToolCalls,
+  pendingToolCalls,
   onSend,
 }: ChatWindowProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -84,6 +87,17 @@ export default function ChatWindow({
                 }}
                 onChatAboutRecipe={handleChatAboutRecipe}
               />
+            )}
+
+            {/* Cooking indicator — tool call in progress but not yet resolved */}
+            {isStreaming && pendingToolCalls.length > 0 && currentToolCalls.length === 0 && (
+              <div className="flex gap-3">
+                <div className="w-8 shrink-0" />
+                <CookingIndicator
+                  variant={pendingToolCalls.some(tc => tc.name === "save_meal_plan") ? "meal-plan" : "recipe"}
+                  count={pendingToolCalls.filter(tc => tc.name === "save_recipe").length || 1}
+                />
+              </div>
             )}
 
             {/* Streaming indicator when no content yet */}
