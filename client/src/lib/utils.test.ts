@@ -68,13 +68,13 @@ describe("formatDate", () => {
   // "yesterday" means 24-47 hours ago, "today" means < 24 hours ago, etc.
 
   test("returns 'Yesterday' for a timestamp ~30 hours ago", () => {
-    const thirtyHoursAgo = Date.now() - 30 * 60 * 60 * 1000;
+    const thirtyHoursAgo = Math.floor(Date.now() / 1000) - 30 * 60 * 60;
     expect(formatDate(thirtyHoursAgo)).toBe("Yesterday");
   });
 
   test("returns a weekday name for dates 2-6 days ago", () => {
     // 3 full days ago (72 hours)
-    const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
+    const threeDaysAgo = Math.floor(Date.now() / 1000) - 3 * 24 * 60 * 60;
     const result = formatDate(threeDaysAgo);
 
     const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -82,7 +82,7 @@ describe("formatDate", () => {
   });
 
   test("returns a formatted date for timestamps older than a week", () => {
-    const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+    const twoWeeksAgo = Math.floor(Date.now() / 1000) - 14 * 24 * 60 * 60;
     const result = formatDate(twoWeeksAgo);
 
     // Should contain a month abbreviation and day number
@@ -95,14 +95,14 @@ describe("formatDate", () => {
     lastYear.setFullYear(lastYear.getFullYear() - 1);
     lastYear.setMonth(0, 15);
     lastYear.setHours(12, 0, 0, 0);
-    const result = formatDate(lastYear.getTime());
+    const result = formatDate(Math.floor(lastYear.getTime() / 1000));
 
     expect(result).toContain(String(lastYear.getFullYear()));
   });
 
   test("returns a time string for today's timestamps", () => {
     // A timestamp from 1 minute ago should show a time
-    const oneMinuteAgo = Date.now() - 60_000;
+    const oneMinuteAgo = Math.floor(Date.now() / 1000) - 60;
     const result = formatDate(oneMinuteAgo);
 
     // Should contain a colon (time format like "3:45 PM" or "15:45")
@@ -111,7 +111,7 @@ describe("formatDate", () => {
 
   test("does not include year for dates in the current year", () => {
     // 10 days ago — same year, should not include the year number
-    const tenDaysAgo = Date.now() - 10 * 24 * 60 * 60 * 1000;
+    const tenDaysAgo = Math.floor(Date.now() / 1000) - 10 * 24 * 60 * 60;
     const result = formatDate(tenDaysAgo);
     const currentYear = String(new Date().getFullYear());
 
