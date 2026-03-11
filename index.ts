@@ -1,8 +1,16 @@
 import { api } from "./server/src/index.ts";
 import { config } from "./server/src/config.ts";
-import { sqlite } from "./server/src/db/index.ts";
+import { sqlite, runMigrations } from "./server/src/db/index.ts";
 
 const isProd = config.NODE_ENV === "production";
+
+// ---------------------------------------------------------------------------
+// Apply pending database migrations before the server starts accepting traffic.
+// This is idempotent — already-applied migrations are skipped in <5ms.
+// If a migration fails, the process exits before binding the port.
+// ---------------------------------------------------------------------------
+
+runMigrations();
 
 // ---------------------------------------------------------------------------
 // Production: serve pre-built static files from ./dist
