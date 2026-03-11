@@ -10,11 +10,43 @@ type MessageBubbleProps = {
   onChatAboutRecipe?: (recipe: Recipe) => void;
 };
 
+/**
+ * Extract recipes from a message, supporting both the new tool-call path
+ * and the legacy `recipeData` field from older messages in the DB.
+ */
+function getRecipesFromMessage(message: ChatMessage): Recipe[] {
+  // New path: extract from tool calls
+  if (message.toolCalls && message.toolCalls.length > 0) {
+    const recipes: Recipe[] = [];
+    for (const tc of message.toolCalls) {
+      if (tc.name === "save_recipe") {
+        recipes.push(tc.data as Recipe);
+      }
+      if (tc.name === "save_meal_plan") {
+        const plan = tc.data as { meals: Array<{ recipe: Recipe }> };
+        for (const meal of plan.meals ?? []) {
+          if (meal.recipe) recipes.push(meal.recipe);
+        }
+      }
+    }
+    if (recipes.length > 0) return recipes;
+  }
+
+  // Legacy path: recipeData from old code-fence parsing
+  if (message.recipeData) {
+    return [message.recipeData];
+  }
+
+  return [];
+}
+
 export default function MessageBubble({
   message,
   onChatAboutRecipe,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const recipes = getRecipesFromMessage(message);
+  const hasContent = message.content.trim().length > 0;
 
   return (
     <div
@@ -48,32 +80,31 @@ export default function MessageBubble({
           isUser ? "items-end" : "items-start",
         )}
       >
-        <div
-          className={cn(
-            "rounded-2xl px-4 py-3 text-sm leading-relaxed",
-            isUser
-              ? "bg-primary-500 text-white rounded-br-md"
-              : "bg-surface-100 text-text-primary rounded-bl-md",
-          )}
-        >
-          {isUser ? (
-            <p className="whitespace-pre-wrap">{message.content}</p>
-          ) : (
-            <div className="prose-chat">
-              <Markdown>{message.content}</Markdown>
-            </div>
-          )}
-        </div>
-
-        {/* Recipe card if present */}
-        {message.recipeData && (
-          <div className="w-full max-w-md">
-            <RecipeCard
-              recipe={message.recipeData}
-              onChatAbout={onChatAboutRecipe}
-            />
+        {hasContent && (
+          <div
+            className={cn(
+              "rounded-2xl px-4 py-3 text-sm leading-relaxed",
+              isUser
+                ? "bg-primary-500 text-white rounded-br-md"
+                : "bg-surface-100 text-text-primary rounded-bl-md",
+            )}
+          >
+            {isUser ? (
+              <p className="whitespace-pre-wrap">{message.content}</p>
+            ) : (
+              <div className="prose-chat">
+                <Markdown>{message.content}</Markdown>
+              </div>
+            )}
           </div>
         )}
+
+        {/* Recipe cards */}
+        {recipes.map((recipe, i) => (
+          <div key={`recipe-${recipe.title}-${i}`} className="w-full max-w-md">
+            <RecipeCard recipe={recipe} onChatAbout={onChatAboutRecipe} />
+          </div>
+        ))}
       </div>
     </div>
   );

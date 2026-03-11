@@ -89,11 +89,8 @@ export async function fetchMe(): Promise<ApiResponse<User>> {
 
 export type SSECallbacks = {
   onContent: (content: string) => void;
-  onDone: (data: {
-    conversationId: number;
-    messageId: number;
-    recipeData?: Recipe[];
-  }) => void;
+  onToolCall: (toolCall: { name: string; call_id: string; data: unknown }) => void;
+  onDone: (data: { conversationId: number; messageId: number }) => void;
   onError: (error: string) => void;
 };
 
@@ -163,10 +160,13 @@ export async function sendMessage(
             callbacks.onDone({
               conversationId: parsed.conversationId,
               messageId: parsed.messageId,
-              recipeData: parsed.recipeData,
             });
+          } else if (parsed.tool_call) {
+            callbacks.onToolCall(parsed.tool_call);
           } else if (parsed.content !== undefined) {
             callbacks.onContent(parsed.content);
+          } else if (parsed.error) {
+            callbacks.onError(parsed.error);
           }
         } catch {
           // Skip malformed JSON lines

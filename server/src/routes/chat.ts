@@ -4,8 +4,8 @@ import { db, conversations, messages, users } from "../db/index.ts";
 import type { AuthEnv } from "../middleware/auth.ts";
 import { authMiddleware } from "../middleware/auth.ts";
 import { AIService } from "../services/ai.ts";
-import { parseRecipes } from "../services/recipe-parser.ts";
-import type { DietaryPreferences, ApiResponse } from "../../../shared/types.ts";
+import { parseRecipes, stripRecipeBlocks } from "../services/recipe-parser.ts";
+import type { DietaryPreferences, ApiResponse, ToolCallEvent } from "../../../shared/types.ts";
 import { safeJsonParse } from "../lib/utils.ts";
 
 // ---------------------------------------------------------------------------
@@ -214,6 +214,7 @@ chatRoutes.post("/", async (c) => {
   const responseStream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let fullContent = "";
+      const toolCallResults: ToolCallEvent[] = [];
 
       try {
         while (true) {
@@ -222,7 +223,7 @@ chatRoutes.post("/", async (c) => {
 
           const chunk = decoder.decode(value, { stream: true });
 
-          // Parse SSE events from the AI stream to buffer content
+          // Parse SSE events from the AI stream
           const lines = chunk.split("\n");
           for (const line of lines) {
             const trimmed = line.trim();
@@ -232,22 +233,72 @@ chatRoutes.post("/", async (c) => {
             if (payload === "[DONE]") continue;
 
             try {
-              const parsed = JSON.parse(payload) as { content?: string; error?: string };
+              const parsed = JSON.parse(payload) as {
+                content?: string;
+                tool_call?: ToolCallEvent;
+                stream_complete?: boolean;
+                fullContent?: string;
+                error?: string;
+              };
+
               if (parsed.content) {
-                fullContent += parsed.content;
+                // Forward text content to client as-is
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ content: parsed.content })}\n\n`),
+                );
+              } else if (parsed.tool_call) {
+                // Forward tool call to client AND capture for DB persistence
+                toolCallResults.push(parsed.tool_call);
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ tool_call: parsed.tool_call })}\n\n`),
+                );
+              } else if (parsed.stream_complete) {
+                // Capture full content for DB storage
+                fullContent = parsed.fullContent ?? "";
+              } else if (parsed.error) {
+                // Forward errors to client
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ error: parsed.error })}\n\n`),
+                );
               }
             } catch {
               // Skip malformed chunks
             }
           }
-
-          // Forward the raw SSE chunk to the client
-          controller.enqueue(value);
         }
 
-        // ── Stream complete — persist assistant message ────────────
+        // ── Phase 1 fallback: code-fence parsing ──────────────────
+        // If the model didn't use tools but embedded recipe fences in text,
+        // parse them out and synthesize tool_call events for the client.
 
-        const recipeData = parseRecipes(fullContent);
+        if (toolCallResults.length === 0 && fullContent.length > 0) {
+          const fallbackRecipes = parseRecipes(fullContent);
+          if (fallbackRecipes.length > 0) {
+            for (let i = 0; i < fallbackRecipes.length; i++) {
+              const syntheticToolCall: ToolCallEvent = {
+                name: "save_recipe",
+                call_id: `fallback-${Date.now()}-${i}`,
+                data: fallbackRecipes[i]!,
+              };
+              toolCallResults.push(syntheticToolCall);
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ tool_call: syntheticToolCall })}\n\n`,
+                ),
+              );
+            }
+            // Strip fences from content before saving to DB
+            fullContent = stripRecipeBlocks(fullContent);
+          }
+        }
+
+        // ── Persist assistant message ─────────────────────────────
+
+        // Extract recipe data from tool calls for backward-compatible DB storage
+        const recipeToolCalls = toolCallResults.filter(
+          (tc) => tc.name === "save_recipe",
+        );
+        const recipeData = recipeToolCalls.map((tc) => tc.data);
         const recipeDataJson = recipeData.length > 0 ? JSON.stringify(recipeData) : null;
 
         const [savedAssistantMsg] = await db
@@ -281,7 +332,6 @@ chatRoutes.post("/", async (c) => {
           done: true,
           conversationId: capturedConversationId,
           messageId: savedAssistantMsg?.id ?? null,
-          recipeData: recipeData.length > 0 ? recipeData : null,
         })}\n\n`;
 
         controller.enqueue(encoder.encode(finalEvent));

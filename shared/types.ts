@@ -49,6 +49,23 @@ export type Recipe = {
   imageUrl?: string;
 };
 
+// ── Tool call types ─────────────────────────────────────────────────
+
+export type MealPlanToolCallData = {
+  name: string;
+  meals: Array<{
+    day: number;
+    mealType: "breakfast" | "lunch" | "dinner" | "snack";
+    recipe: Recipe;
+  }>;
+};
+
+export type ToolCallEvent = {
+  name: "save_recipe" | "save_meal_plan";
+  call_id: string;
+  data: Recipe | MealPlanToolCallData;
+};
+
 // ── Chat types ──────────────────────────────────────────────────────
 
 export type ChatMessage = {
@@ -56,6 +73,7 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   recipeData?: Recipe | null;
+  toolCalls?: ToolCallEvent[];
   createdAt?: number;
 };
 

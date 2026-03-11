@@ -18,7 +18,7 @@ function toPublicRecipe(row: typeof recipes.$inferSelect): SharedRecipe & { id: 
     description: row.description ?? "",
     ingredients: safeJsonParse(row.ingredients, []),
     instructions: safeJsonParse(row.instructions, []),
-    nutrition: safeJsonParse(row.nutrition, null),
+    nutrition: safeJsonParse(row.nutrition, { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 }),
     cuisine: row.cuisine ?? "",
     cookTimeMin: row.cookTimeMin ?? 0,
     servings: row.servings ?? 1,

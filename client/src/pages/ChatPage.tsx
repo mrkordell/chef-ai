@@ -8,6 +8,7 @@ export default function ChatPage() {
     messages,
     isStreaming,
     currentStreamContent,
+    currentToolCalls,
     conversations,
     activeConversationId,
     sendMessage,
@@ -36,6 +37,7 @@ export default function ChatPage() {
           messages={messages}
           isStreaming={isStreaming}
           currentStreamContent={currentStreamContent}
+          currentToolCalls={currentToolCalls}
           onSend={sendMessage}
         />
       </main>

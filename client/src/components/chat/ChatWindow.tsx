@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { ChefHat, Sparkles } from "lucide-react";
-import type { ChatMessage, Recipe } from "../../../../shared/types.ts";
+import type { ChatMessage, Recipe, ToolCallEvent } from "../../../../shared/types.ts";
 import { cn } from "../../lib/utils.ts";
 import { Avatar, AvatarFallback } from "../ui/avatar.tsx";
 import { ScrollArea } from "../ui/scroll-area.tsx";
@@ -11,6 +11,7 @@ type ChatWindowProps = {
   messages: ChatMessage[];
   isStreaming: boolean;
   currentStreamContent: string;
+  currentToolCalls: ToolCallEvent[];
   onSend: (message: string) => void;
 };
 
@@ -25,6 +26,7 @@ export default function ChatWindow({
   messages,
   isStreaming,
   currentStreamContent,
+  currentToolCalls,
   onSend,
 }: ChatWindowProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -75,6 +77,10 @@ export default function ChatWindow({
                 message={{
                   role: "assistant",
                   content: currentStreamContent,
+                  toolCalls:
+                    currentToolCalls.length > 0
+                      ? currentToolCalls
+                      : undefined,
                 }}
                 onChatAboutRecipe={handleChatAboutRecipe}
               />

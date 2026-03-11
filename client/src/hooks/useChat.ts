@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import type { ChatMessage, Conversation, Recipe } from "../../../shared/types.ts";
+import type { ChatMessage, Conversation, Recipe, ToolCallEvent } from "../../../shared/types.ts";
 import {
   deleteConversation as apiDeleteConversation,
   fetchConversations,
@@ -11,6 +11,7 @@ type UseChatReturn = {
   messages: ChatMessage[];
   isStreaming: boolean;
   currentStreamContent: string;
+  currentToolCalls: ToolCallEvent[];
   conversations: Conversation[];
   activeConversationId: number | null;
   sendMessage: (text: string) => Promise<void>;
@@ -24,6 +25,7 @@ export function useChat(): UseChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentStreamContent, setCurrentStreamContent] = useState("");
+  const [currentToolCalls, setCurrentToolCalls] = useState<ToolCallEvent[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<
     number | null
@@ -32,6 +34,8 @@ export function useChat(): UseChatReturn {
   // Track the conversation ID ref so SSE callback can read the latest value
   const conversationIdRef = useRef<number | null>(null);
   conversationIdRef.current = activeConversationId;
+
+  const toolCallsRef = useRef<ToolCallEvent[]>([]);
 
   const loadConversations = useCallback(async () => {
     const result = await fetchConversations();
@@ -54,6 +58,8 @@ export function useChat(): UseChatReturn {
     setActiveConversationId(null);
     setMessages([]);
     setCurrentStreamContent("");
+    setCurrentToolCalls([]);
+    toolCallsRef.current = [];
   }, []);
 
   const deleteConversation = useCallback(
@@ -65,6 +71,8 @@ export function useChat(): UseChatReturn {
         setActiveConversationId(null);
         setMessages([]);
         setCurrentStreamContent("");
+        setCurrentToolCalls([]);
+        toolCallsRef.current = [];
       }
     },
     [],
@@ -84,6 +92,8 @@ export function useChat(): UseChatReturn {
       setMessages((prev) => [...prev, userMessage]);
       setIsStreaming(true);
       setCurrentStreamContent("");
+      setCurrentToolCalls([]);
+      toolCallsRef.current = [];
 
       let accumulated = "";
 
@@ -96,20 +106,38 @@ export function useChat(): UseChatReturn {
             setCurrentStreamContent(accumulated);
           },
 
+          onToolCall(toolCall) {
+            const event: ToolCallEvent = {
+              name: toolCall.name as ToolCallEvent["name"],
+              call_id: toolCall.call_id,
+              data: toolCall.data as ToolCallEvent["data"],
+            };
+            toolCallsRef.current = [...toolCallsRef.current, event];
+            setCurrentToolCalls([...toolCallsRef.current]);
+          },
+
           onDone(data) {
+            const finalToolCalls = toolCallsRef.current;
+            const recipeToolCall = finalToolCalls.find(
+              (tc) => tc.name === "save_recipe",
+            );
+
             const assistantMessage: ChatMessage = {
               id: data.messageId,
               role: "assistant",
               content: accumulated,
-              recipeData:
-                data.recipeData && data.recipeData.length > 0
-                  ? data.recipeData[0]
-                  : null,
+              recipeData: recipeToolCall
+                ? (recipeToolCall.data as Recipe)
+                : null,
+              toolCalls:
+                finalToolCalls.length > 0 ? finalToolCalls : undefined,
               createdAt: Date.now(),
             };
 
             setMessages((prev) => [...prev, assistantMessage]);
             setCurrentStreamContent("");
+            setCurrentToolCalls([]);
+            toolCallsRef.current = [];
             setIsStreaming(false);
 
             // Update conversation ID if this was a new conversation
@@ -129,6 +157,8 @@ export function useChat(): UseChatReturn {
 
             setMessages((prev) => [...prev, errorMessage]);
             setCurrentStreamContent("");
+            setCurrentToolCalls([]);
+            toolCallsRef.current = [];
             setIsStreaming(false);
           },
         },
@@ -141,6 +171,7 @@ export function useChat(): UseChatReturn {
     messages,
     isStreaming,
     currentStreamContent,
+    currentToolCalls,
     conversations,
     activeConversationId,
     sendMessage,

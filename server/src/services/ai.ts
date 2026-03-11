@@ -1,5 +1,6 @@
 import type { DietaryPreferences } from "../../../shared/types.ts";
 import { config } from "../config.ts";
+import { CHEF_TOOLS } from "./tool-definitions.ts";
 
 // ── Config ──────────────────────────────────────────────────────────
 
@@ -15,43 +16,21 @@ const CHEF_SYSTEM_PROMPT = `You are Chef AI — a warm, knowledgeable, and encou
 
 1. **Respect dietary needs absolutely.** If the user has dietary preferences or allergies (listed below under USER PREFERENCES), never suggest anything that violates them. When substituting, explain why the swap works.
 
-2. **Structured recipe output.** Whenever you generate or suggest a complete recipe, you MUST include a structured JSON block wrapped in a \`\`\`recipe code fence. The JSON must match this schema exactly:
-\`\`\`
-{
-  "title": string,
-  "description": string,
-  "ingredients": [{ "name": string, "amount": string, "unit": string }],
-  "instructions": ["Step 1...", "Step 2..."],
-  "nutrition": { "calories": number, "protein": number, "carbs": number, "fat": number, "fiber": number },
-  "cuisine": string,
-  "cookTimeMin": number,
-  "servings": number
-}
-\`\`\`
-Always provide nutritional estimates (per serving) for every recipe.
+2. **Use tools for structured data.** When you have a recipe, call save_recipe. When you have a meal plan, call save_meal_plan. NEVER write recipe JSON in your text. Text is purely conversational.
 
-3. **Cooking mode.** When the user says "let's cook this", "start cooking", "walk me through it", or similar, switch to step-by-step cooking mode:
+3. **Write a brief conversational intro, then call the tool.** Don't duplicate recipe details in prose — the tool call carries the structured data. Keep your text response short and friendly: introduce the dish, mention why it's a good fit, and let the tool handle the details.
+
+4. **Cooking mode.** When the user says "let's cook this", "start cooking", "walk me through it", or similar, switch to step-by-step cooking mode:
    - Present ONE step at a time.
    - Wait for the user to say "next", "done", "continue", or similar before proceeding.
    - Offer tips or timing cues relevant to the current step.
    - When all steps are done, congratulate them!
 
-4. **Meal plans.** When asked for a meal plan, generate a complete weekly plan and wrap it in a \`\`\`mealplan code fence as JSON:
-\`\`\`
-{
-  "name": string,
-  "meals": [
-    { "day": 0-6, "mealType": "breakfast"|"lunch"|"dinner"|"snack", "recipe": { ...full recipe object... } }
-  ]
-}
-\`\`\`
-Days are 0 = Monday through 6 = Sunday.
-
 5. **Ingredient-based suggestions.** When the user lists ingredients they have on hand, suggest creative recipes that primarily use those ingredients. Minimize extra shopping.
 
 6. **General food knowledge.** You can discuss cooking techniques, ingredient substitutions, food storage tips, kitchen equipment, food science, and culinary history. Be helpful and thorough.
 
-7. **Be conversational.** Use natural language around the structured blocks. Introduce recipes with enthusiasm, explain your choices, and ask follow-up questions to refine suggestions.`;
+7. **Be conversational.** Use natural language. Introduce recipes with enthusiasm, explain your choices, and ask follow-up questions to refine suggestions.`;
 
 /**
  * Build the full system prompt by injecting user dietary preferences.
@@ -106,6 +85,14 @@ function buildSystemPrompt(
   return `${CHEF_SYSTEM_PROMPT}\n\n## USER PREFERENCES\n${prefsBlock}`;
 }
 
+// ── Types for tool call accumulation ────────────────────────────────
+
+type AccumulatedToolCall = {
+  id: string;
+  name: string;
+  arguments: string;
+};
+
 // ── Streaming chat ──────────────────────────────────────────────────
 
 type ChatInput = {
@@ -114,9 +101,14 @@ type ChatInput = {
 };
 
 /**
- * Stream a chat completion from OpenRouter. Returns a ReadableStream that
- * emits Server-Sent Events: `data: {"content":"..."}\n\n` per chunk,
- * ending with `data: [DONE]\n\n`.
+ * Stream a chat completion from OpenRouter with tool support.
+ *
+ * Emits SSE events:
+ *   - `{"content":"..."}` — text token from the model
+ *   - `{"tool_call":{"name":"save_recipe","call_id":"...","data":{...}}}` — parsed tool call
+ *   - `{"stream_complete":true,"fullContent":"..."}` — signals end, carries full text for DB
+ *   - `{"error":"..."}` — on failure
+ *   - `[DONE]` — terminal sentinel
  */
 function streamChat(
   messages: ChatInput[],
@@ -140,6 +132,7 @@ function streamChat(
           body: JSON.stringify({
             model: MODEL,
             stream: true,
+            tools: CHEF_TOOLS,
             messages: [
               { role: "system", content: systemPrompt },
               ...messages.map((m) => ({
@@ -173,6 +166,10 @@ function streamChat(
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
+        let fullContent = "";
+
+        // Accumulate tool calls by index
+        const toolCalls = new Map<number, AccumulatedToolCall>();
 
         while (true) {
           const { done, value } = await reader.read();
@@ -180,7 +177,7 @@ function streamChat(
 
           buffer += decoder.decode(value, { stream: true });
 
-          // SSE lines are separated by double newlines; process complete events
+          // SSE lines are separated by newlines; process complete events
           const lines = buffer.split("\n");
           // Keep the last (possibly incomplete) line in the buffer
           buffer = lines.pop() ?? "";
@@ -190,6 +187,32 @@ function streamChat(
             if (!trimmed || trimmed.startsWith(":")) continue;
 
             if (trimmed === "data: [DONE]") {
+              // Stream from upstream is done — emit accumulated tool calls,
+              // then stream_complete, then our own [DONE]
+              for (const [, tc] of toolCalls) {
+                try {
+                  const data = JSON.parse(tc.arguments);
+                  const toolCallEvent = `data: ${JSON.stringify({
+                    tool_call: {
+                      name: tc.name,
+                      call_id: tc.id,
+                      data,
+                    },
+                  })}\n\n`;
+                  controller.enqueue(encoder.encode(toolCallEvent));
+                } catch (parseErr) {
+                  console.error(
+                    `[AIService] Failed to parse tool call arguments for ${tc.name}:`,
+                    parseErr,
+                  );
+                }
+              }
+
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ stream_complete: true, fullContent })}\n\n`,
+                ),
+              );
               controller.enqueue(encoder.encode("data: [DONE]\n\n"));
               controller.close();
               return;
@@ -200,13 +223,57 @@ function streamChat(
               try {
                 const parsed = JSON.parse(jsonStr) as {
                   choices?: Array<{
-                    delta?: { content?: string };
+                    delta?: {
+                      content?: string;
+                      tool_calls?: Array<{
+                        index: number;
+                        id?: string;
+                        function?: {
+                          name?: string;
+                          arguments?: string;
+                        };
+                      }>;
+                    };
                   }>;
                 };
-                const content = parsed.choices?.[0]?.delta?.content;
-                if (content) {
-                  const event = `data: ${JSON.stringify({ content })}\n\n`;
+
+                const delta = parsed.choices?.[0]?.delta;
+
+                // ── Handle text content ──
+                if (delta?.content) {
+                  fullContent += delta.content;
+                  const event = `data: ${JSON.stringify({ content: delta.content })}\n\n`;
                   controller.enqueue(encoder.encode(event));
+                }
+
+                // ── Handle tool calls (buffered server-side) ──
+                if (delta?.tool_calls) {
+                  for (const tc of delta.tool_calls) {
+                    const idx = tc.index;
+                    let accumulated = toolCalls.get(idx);
+
+                    if (!accumulated) {
+                      accumulated = {
+                        id: tc.id ?? "",
+                        name: tc.function?.name ?? "",
+                        arguments: "",
+                      };
+                      toolCalls.set(idx, accumulated);
+                    }
+
+                    // The id and name may arrive in the first chunk only
+                    if (tc.id && !accumulated.id) {
+                      accumulated.id = tc.id;
+                    }
+                    if (tc.function?.name && !accumulated.name) {
+                      accumulated.name = tc.function.name;
+                    }
+
+                    // Arguments are streamed incrementally
+                    if (tc.function?.arguments) {
+                      accumulated.arguments += tc.function.arguments;
+                    }
+                  }
                 }
               } catch {
                 // Skip malformed JSON chunks — upstream SSE can be noisy
@@ -215,7 +282,31 @@ function streamChat(
           }
         }
 
-        // Stream ended without explicit [DONE] — close cleanly
+        // Stream ended without explicit [DONE] — emit accumulated data and close
+        for (const [, tc] of toolCalls) {
+          try {
+            const data = JSON.parse(tc.arguments);
+            const toolCallEvent = `data: ${JSON.stringify({
+              tool_call: {
+                name: tc.name,
+                call_id: tc.id,
+                data,
+              },
+            })}\n\n`;
+            controller.enqueue(encoder.encode(toolCallEvent));
+          } catch (parseErr) {
+            console.error(
+              `[AIService] Failed to parse tool call arguments for ${tc.name}:`,
+              parseErr,
+            );
+          }
+        }
+
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ stream_complete: true, fullContent })}\n\n`,
+          ),
+        );
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
       } catch (err) {
