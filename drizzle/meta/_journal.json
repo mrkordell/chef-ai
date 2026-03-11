@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1773191318396,
+      "tag": "0000_lean_lightspeed",
+      "breakpoints": true
+    }
+  ]
+}
